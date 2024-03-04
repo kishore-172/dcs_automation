@@ -1,0 +1,110 @@
+import streamlit as st
+import pandas as pd
+
+df = pd.read_csv("data_mart.csv")
+
+st.title("SQL Query Generator")
+
+domain = st.selectbox("Choose domain?", df['Alias'].unique())
+schema_desc = df[df['Alias'] == domain].Schema_desc.unique()
+st.markdown(f"{schema_desc[0]}")
+
+operator = ['In', 'Between', 'Like', '=']
+action = ['count ', 'count distinct']
+logic = ['and', 'or']
+
+entity = st.selectbox("Choose Entity?", df[df['Alias'] == domain].Table_Alias.unique())
+table_desc = df[df['Table_Alias'] == entity].table_desc.unique()
+st.markdown(f"*{table_desc[0]}*")
+
+sec_tab = st.checkbox('Use Secondary table ')
+entity2 = ""
+
+if sec_tab:
+    entity2 = st.selectbox("Choose Secondary Table ?", df[df['Alias'] == domain].Table_Alias.unique())
+    join_key = st.selectbox("Choose join key ?", df[df['Table_Alias'] == entity2].Alias2.unique())
+
+    type_join_ls = {1: f"Get {join_key} present in both {entity2} and {entity}",
+                    2: f"Get {join_key} present in not in {entity2} and in {entity}",
+                    3: f"Get {join_key} present in  {entity2} and not in {entity}"}
+    join_type_name = {1: " left join ", 2: " right join ", 3: "inner join"}
+    type_join_1 = st.selectbox('Choose type?', type_join_ls.values())
+    value = {i for i in type_join_ls if type_join_ls[i] == type_join_1}
+    value = list(value)[0]
+    type_join = join_type_name[value]
+
+st.session_state.feature_df = pd.DataFrame({'Feature Name': [], 'Operator': [], 'Value': [], 'Logic': []})
+
+st.markdown("Filter")
+config = {
+    'Feature Name': st.column_config.SelectboxColumn('Filter Name',
+                                                     options=df[((df['Table_Alias'] == entity) | (
+                                                                 df['Table_Alias'] == entity2))].Alias2.unique(),
+                                                     required=True),
+    'Operator': st.column_config.SelectboxColumn('Operator', options=operator),
+    'Value': st.column_config.TextColumn('Value'),
+    'Logic': st.column_config.SelectboxColumn('logic', options=logic)
+}
+
+result = st.data_editor(pd.DataFrame(columns=config.keys()), column_config=config, num_rows='dynamic')
+
+st.markdown("Summarize")
+config2 = {
+    'Feature Name': st.column_config.SelectboxColumn('Feature Name ',
+                                                     options=df[(df['Table_Alias'] == entity) | (
+                                                             df['Table_Alias'] == entity2)].Alias2.unique()),
+    'Action': st.column_config.SelectboxColumn('Action', options=action)
+}
+
+result2 = st.data_editor(pd.DataFrame(columns=config2.keys()), column_config=config2, num_rows='dynamic')
+
+st.markdown("Group by")
+config3 = {
+    'Group By': st.column_config.SelectboxColumn('Group By',
+                                                 options=df[(df['Table_Alias'] == entity) | (
+                                                         df['Table_Alias'] == entity2)].Alias2.unique(), required=True)
+}
+
+result3 = st.data_editor(pd.DataFrame(columns=config3.keys()), column_config=config3, num_rows='dynamic')
+
+if st.button('Get results'):
+    str_select = "select "
+    str_act = ""
+    str_filter = ""
+    str_group = ""
+
+    l = [', '.join(result3['Group By'])]
+    c = 0
+
+    for i in range(len(result2)):
+        feature_name_act = result2.iloc[i, 0]
+        action = result2.iloc[i, 1]
+        if c == 0:
+            str3 = f"{action} {feature_name_act}"
+        else:
+            str3 = f", {action} {feature_name_act}"
+        str_act = str_act + str3
+        c = c + 1
+
+    str_act = l[0] + ", " + str_act
+    for i in range(len(result)):
+        feature = result.iloc[i, 0]
+        operator = result.iloc[i, 1]
+        value = result.iloc[i, 2]
+        logic = result.iloc[i, 3]
+        if logic == "None":
+            logic = ""
+        str2 = f"{feature} {operator} {value} {logic}"
+        str_filter = str_filter + str2
+
+    for i in range(len(result3)):
+        l = [', '.join(result3['Group By'])]
+        str_group = f"Group by {l[0]}"
+
+    if sec_tab:
+        str_join = df[df['Table_Alias'] == entity].Table_Name.unique() + " as a " + type_join + " " + \
+                   df[df['Table_Alias'] == entity2].Table_Name.unique() + " as b " + " on " + "a." + join_key + " = " + "b." + join_key
+        st.write(str_select + str_act + str_from + str_join + str_where + str_filter + str_group)
+    else:
+        st.write(str_select + str_act + str_from + df[
+            df['Table_Alias'] == entity].Table_Name.unique() + str_where + str_filter + str_group)
